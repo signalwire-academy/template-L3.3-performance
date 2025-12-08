@@ -63,4 +63,10 @@ See `reference/starter.py` for a boilerplate template.
 
 ---
 
+## Next Assignment
+
+Ready to continue? [**Start Lab 3.4: Security & Compliance**](https://classroom.github.com/a/jb7C-oZ5)
+
+---
+
 *SignalWire AI Agents Certification*
