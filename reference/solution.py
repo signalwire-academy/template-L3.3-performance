@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Performance-optimized agent.
 
-Lab 3.3 Deliverable (Part 2): Demonstrates performance best practices
-including caching, parallel execution, timeouts, and fillers.
+Lab 3.3 Deliverable: Demonstrates performance best practices
+including caching, parallel execution, timeouts, hints, and fillers.
 """
 
 import time
@@ -20,6 +20,7 @@ class OptimizedAgent(AgentBase):
         # OPTIMIZATION 1: Concise, focused prompts
         self._configure_prompts()
         self._configure_timing()
+        self._configure_hints()
 
         self.add_language("English", "en-US", "rime.spore")
         self._setup_functions()
@@ -41,14 +42,28 @@ class OptimizedAgent(AgentBase):
         )
 
     def _configure_timing(self):
-        """OPTIMIZATION 2: Optimized speech timing."""
+        """OPTIMIZATION 2: Optimized speech timing params."""
         self.set_params({
             "end_of_speech_timeout": 400,  # Slightly faster
             "attention_timeout": 8000,
             "barge_min_words": 2  # Require 2 words to interrupt
         })
 
-    # OPTIMIZATION 3: Cached shipping zone lookup
+    def _configure_hints(self):
+        """OPTIMIZATION 3: Speech recognition hints for better accuracy."""
+        self.add_hints([
+            "product",
+            "inventory",
+            "shipping",
+            "warehouse",
+            "SKU",
+            "zip code",
+            "tracking",
+            "order status",
+            "delivery"
+        ])
+
+    # OPTIMIZATION 4: Cached shipping zone lookup
     @staticmethod
     @lru_cache(maxsize=100)
     def _get_shipping_zone(zip_prefix: str) -> str:
@@ -76,22 +91,44 @@ class OptimizedAgent(AgentBase):
     def _setup_functions(self):
         """Define optimized functions."""
 
-        # OPTIMIZATION 4: Fillers for slow operations
+        # OPTIMIZATION 5: Fillers for slow operations
         @self.tool(
             description="Look up product information",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "product_id": {
+                        "type": "string",
+                        "description": "The product ID to look up"
+                    }
+                },
+                "required": ["product_id"]
+            },
             fillers=["Looking that up...", "Checking our catalog..."]
         )
-        def get_product(product_id: str) -> SwaigFunctionResult:
+        def get_product(args: dict, raw_data: dict = None) -> SwaigFunctionResult:
+            product_id = args.get("product_id", "unknown")
             # Fast simulated lookup
             time.sleep(0.3)
             return SwaigFunctionResult(f"Product {product_id}: Widget Pro, $99.99")
 
-        # OPTIMIZATION 5: Parallel warehouse checks
+        # OPTIMIZATION 6: Parallel warehouse checks
         @self.tool(
             description="Check inventory across warehouses",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "sku": {
+                        "type": "string",
+                        "description": "The SKU to check inventory for"
+                    }
+                },
+                "required": ["sku"]
+            },
             fillers=["Checking all warehouses...", "One moment..."]
         )
-        def check_inventory(sku: str) -> SwaigFunctionResult:
+        def check_inventory(args: dict, raw_data: dict = None) -> SwaigFunctionResult:
+            sku = args.get("sku", "unknown")
             # Parallel execution - 3 calls in ~0.3s instead of ~1s
             with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
                 futures = [
@@ -109,15 +146,28 @@ class OptimizedAgent(AgentBase):
 
             return SwaigFunctionResult(f"Inventory for {sku}: {total} total")
 
-        # OPTIMIZATION 6: Cached calculations
+        # OPTIMIZATION 7: Cached calculations
         @self.tool(
             description="Calculate shipping cost",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "zip_code": {
+                        "type": "string",
+                        "description": "Destination zip code"
+                    },
+                    "weight": {
+                        "type": "number",
+                        "description": "Package weight in pounds"
+                    }
+                },
+                "required": ["zip_code", "weight"]
+            },
             fillers=["Calculating shipping..."]
         )
-        def calculate_shipping(
-            zip_code: str,
-            weight: float
-        ) -> SwaigFunctionResult:
+        def calculate_shipping(args: dict, raw_data: dict = None) -> SwaigFunctionResult:
+            zip_code = args.get("zip_code", "50000")
+            weight = args.get("weight", 1.0)
             # Use cached lookups
             zip_prefix = zip_code[0] if zip_code else "5"
             zone = self._get_shipping_zone(zip_prefix)
@@ -130,18 +180,31 @@ class OptimizedAgent(AgentBase):
                 f"Shipping to {zip_code} ({zone} zone): ${total:.2f}"
             )
 
-        @self.tool(description="Get shipping zone for zip code")
-        def get_shipping_zone(zip_code: str) -> SwaigFunctionResult:
+        @self.tool(
+            description="Get shipping zone for zip code",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "zip_code": {
+                        "type": "string",
+                        "description": "Zip code to look up"
+                    }
+                },
+                "required": ["zip_code"]
+            }
+        )
+        def get_shipping_zone(args: dict, raw_data: dict = None) -> SwaigFunctionResult:
+            zip_code = args.get("zip_code", "50000")
             # Instant from cache after first call
             zone = self._get_shipping_zone(zip_code[0] if zip_code else "5")
             return SwaigFunctionResult(f"Zip {zip_code} is in {zone} zone")
 
-        # OPTIMIZATION 7: Timeout protection
+        # OPTIMIZATION 8: Timeout protection
         @self.tool(
             description="Check external service status",
             fillers=["Checking service status..."]
         )
-        def check_external_service() -> SwaigFunctionResult:
+        def check_external_service(args: dict, raw_data: dict = None) -> SwaigFunctionResult:
             try:
                 # Reasonable timeout
                 import requests
@@ -150,10 +213,6 @@ class OptimizedAgent(AgentBase):
                     timeout=2  # 2 second timeout
                 )
                 return SwaigFunctionResult("External service: Online")
-            except requests.Timeout:
-                return SwaigFunctionResult(
-                    "External service check timed out. Functionality may be limited."
-                )
             except Exception:
                 return SwaigFunctionResult(
                     "Could not check external service. Please try again."
